@@ -599,6 +599,10 @@ void Connect(int sockfd, struct sockaddr *serv_addr, int addrlen)
  * Protocol-independent wrappers
  *******************************/
 /* $begin getaddrinfo */
+// node: 도메인 이름(128.x.x.x)
+// service: port(service)이름
+// hints: 선택적으로 사용할 수 있는 인자.(보다 상세한 제어)
+// res: linked list의 구조체의 시작주소(domain과 ip들이 서로 다대다 mapping이 될 수 있어서)
 void Getaddrinfo(const char *node, const char *service, 
                  const struct addrinfo *hints, struct addrinfo **res)
 {
@@ -947,6 +951,8 @@ ssize_t Rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen)
  *       -1 with errno set for other errors.
  */
 /* $begin open_clientfd */
+// client는 이 함수를 통해 서버와 연결을 설정
+// hostname, port를 가지고 연결요청을 듣는 서버와 연결
 int open_clientfd(char *hostname, char *port) {
     int clientfd, rc;
     struct addrinfo hints, *listp, *p;
@@ -956,6 +962,7 @@ int open_clientfd(char *hostname, char *port) {
     hints.ai_socktype = SOCK_STREAM;  /* Open a connection */
     hints.ai_flags = AI_NUMERICSERV;  /* ... using a numeric port arg. */
     hints.ai_flags |= AI_ADDRCONFIG;  /* Recommended for connections */
+    //getaddrinfo는 서버와 연결을 설정하기에 적합한 소켓 주소 구조체를 가리킨다.
     if ((rc = getaddrinfo(hostname, port, &hints, &listp)) != 0) {
         fprintf(stderr, "getaddrinfo failed (%s:%s): %s\n", hostname, port, gai_strerror(rc));
         return -2;
@@ -964,6 +971,7 @@ int open_clientfd(char *hostname, char *port) {
     /* Walk the list for one that we can successfully connect to */
     for (p = listp; p; p = p->ai_next) {
         /* Create a socket descriptor */
+        // socket은 3부터 시작하는 file descriptor를 return
         if ((clientfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) 
             continue; /* Socket failed, try the next */
 
@@ -1000,9 +1008,9 @@ int open_listenfd(char *port)
     int listenfd, rc, optval=1;
 
     /* Get a list of potential server addresses */
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_socktype = SOCK_STREAM;             /* Accept connections */
-    hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG; /* ... on any IP address */
+    memset(&hints, 0, sizeof(struct addrinfo)); //전체 0으로 설정
+    hints.ai_socktype = SOCK_STREAM; // 각자의 고유한 주소에 대해 최대 1개의 addrinfo 구조체로 제한함 
+    hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG; /* ... on any IP address  이 경우 host주소 NULL이어야함*/
     hints.ai_flags |= AI_NUMERICSERV;            /* ... using port number */
     if ((rc = getaddrinfo(NULL, port, &hints, &listp)) != 0) {
         fprintf(stderr, "getaddrinfo failed (port %s): %s\n", port, gai_strerror(rc));
@@ -1012,6 +1020,7 @@ int open_listenfd(char *port)
     /* Walk the list for one that we can bind to */
     for (p = listp; p; p = p->ai_next) {
         /* Create a socket descriptor */
+        // socket은 성공하면 비음수 식별자를 return함(실패시 -1 return)
         if ((listenfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) 
             continue;  /* Socket failed, try the next */
 
@@ -1020,6 +1029,7 @@ int open_listenfd(char *port)
                    (const void *)&optval , sizeof(int));
 
         /* Bind the descriptor to the address */
+        // add에 있는 서버의 소켓주소와 소켓 식별자 listenfd와 연결
         if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0)
             break; /* Success */
         if (close(listenfd) < 0) { /* Bind failed, try the next */
@@ -1036,10 +1046,10 @@ int open_listenfd(char *port)
 
     /* Make it a listening socket ready to accept connection requests */
     if (listen(listenfd, LISTENQ) < 0) {
-        close(listenfd);
-	return -1;
+        close(listenfd); //실패시 listenfd(식별자)를 닫는다. -> 메모리 누수 회피
+	    return -1;
     }
-    return listenfd;
+    return listenfd; //포트 port에 연결 요청을 받을 준비가 된 듣기 식별자를 리턴
 }
 /* $end open_listenfd */
 
